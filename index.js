@@ -1,76 +1,74 @@
+const { Telegraf } = require('telegraf')
 const { PrismaClient } = require('@prisma/client')
-const TelegramBot = require('node-telegram-bot-api')
-const bcrypt = require('bcrypt')
-
+const { message } = require('telegraf/filters')
 require('dotenv').config()
 
-const start = () => {
-	const token = process.env.TELEGRAM_TOKEN
-	const bot = new TelegramBot(token, { polling: true })
+const bot = new Telegraf(process.env.TELEGRAM_TOKEN)
+
+const fetchOrder = async orderId => {
 	const client = new PrismaClient()
 
-	const fetchOrder = async orderId => {
-		const data = await client.order.findUnique({
+	try {
+		const order = await client.order.findUnique({
 			where: { transactionId: orderId }
 		})
-		return data
-	}
 
-	const auth = async (email, password) => {
-		const data = await client.user.findFirst({
-			where: {
-				email
+		if (!order) {
+			return { error: 'Order not found' }
+		}
+
+		const orderProducts = await client.order_product.findMany({
+			where: { orderId: order.id },
+			select: {
+				count: true,
+				product: true
 			}
 		})
-		if (data && (await bcrypt.compare(password, data.password))) {
-			//?
-			return res.status(200).json(data)
-		}
+
+		return { order, orderProducts }
+	} catch (error) {
+		console.error('Error fetching order:', error)
+		return { error: 'An error has occurred' }
+	} finally {
+		await client.$disconnect()
+	}
+}
+bot.start(ctx => ctx.reply('Welcome! Write your order number.'))
+
+bot.on(message('text'), async ctx => {
+	if (!ctx.message.from || !ctx.message.from.id) {
+		return
 	}
 
-	bot.setMyCommands([
-		{ command: '/start', description: 'Please, write your Order' },
-		{ command: '/auth', description: 'Authorization' }
-	])
+	const orderData = await fetchOrder(ctx.message.text, ctx)
 
-	bot.on('message', async msg => {
-		const chatId = msg.chat.id
-		const text = msg.text
+	if (orderData.error) {
+		await ctx.reply(`Error: ${orderData.error}`)
+		return
+	}
 
-		if (text === '/start') {
-			// await bot.sendMessage(chatId, 'Please, write /auth')
+	await ctx.reply(
+		`Your status is: ${orderData.order.status}. Payment amount: $${orderData.order.paymentAmount}`
+	)
 
-			await bot.sendMessage(chatId, 'Please, write your Email & Password')
-			console.log(text)
-			// auth()
-			// async function auth() {
-			// 	if (text.split(' ').includes('@')) {
-			// 		await bot.sendMessage(chatId, text)
-			// 		console.log(text)
-			// 		const password = await bot.sendMessage(chatId, 'Please, write your Password')
-			// 	}
-			// }
-			// await auth()
-		}
-		// if (text === '/auth') {
-		// 	// 	auth()
+	orderData.orderProducts.forEach(orderProduct =>
+		ctx.reply(
+			`Name: ${orderProduct.product.name}, price: $${orderProduct.product.price}, count: ${orderProduct.count}`
+		)
+	)
+})
 
-		// 	const email = await bot.sendMessage(chatId, 'Please, write your Email')
+bot.command('start', async ctx => {
+	await ctx.reply(JSON.stringify(ctx.message, null, 2))
+})
 
-		// 	text.split(' ')
-		// 	if (text.includes('@')) {
-		// 		console.log(text)
-		// 		const password = await bot.sendMessage(chatId, 'Please, write your Password')
-		// 	}
-		// }
-		// if (text === '/order') {
-		// fetchOrder()
-
-		// return bot.sendMessage(chatId, 'Please, write your Order')
-
-		// }
-		// return bot.sendMessage(chatId, 'Please, write /start')
+bot.launch()
+	.then(() => {
+		console.log('Bot is running')
 	})
-}
+	.catch(err => {
+		console.error('Error starting bot', err)
+	})
 
-start()
+process.once('SIGINT', () => bot.stop('SIGINT'))
+process.once('SIGTERM', () => bot.stop('SIGTERM'))
