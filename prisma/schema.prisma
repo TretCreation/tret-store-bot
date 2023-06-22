@@ -1,0 +1,127 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider     = "mysql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+}
+
+model User {
+  id            Int        @id @default(autoincrement())
+  name          String?
+  email         String?    @unique
+  emailGoogle   String?    @unique
+  emailFacebook String?    @unique
+  password      String
+  img           String     @default("/avatars/default-user-avatar.png")
+  wishlist      Wishlist[]
+  role          Role       @default(USER_ROLE)
+  orders        Order[]
+  cart          Cart[]
+}
+
+model Wishlist {
+  id        Int     @id @default(autoincrement())
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  userId    Int
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([productId])
+}
+
+model Cart {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  product   Product? @relation(fields: [productId], references: [id], onDelete: NoAction)
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  count     Int      @default(1)
+
+  @@index([userId])
+  @@index([productId])
+}
+
+model Order {
+  id             Int             @id @default(autoincrement())
+  userId         Int
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status         String
+  transactionId  String          @unique
+  paymentAmount  Int
+  createdAt      DateTime
+  updatedAt      DateTime
+  order_products Order_product[]
+
+  @@index([userId])
+}
+
+model Order_product {
+  id            Int     @id @default(autoincrement())
+  orderId       Int
+  order_product Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     Int
+  product       Product @relation(fields: [productId], references: [id])
+  count         Int
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Product {
+  id            Int             @id @default(autoincrement())
+  name          String          @db.Text
+  price         Int
+  img           String
+  rating        Int             @default(0)
+  brandId       Int
+  brand         Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  typeId        Int
+  type          Type            @relation(fields: [typeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  product_info  Product_info[]
+  order_product Order_product[]
+  wishlist      Wishlist[]
+  cart          Cart[]
+
+  @@index([typeId])
+  @@index([brandId])
+  @@fulltext([name])
+}
+
+model Product_info {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  product     Product? @relation(fields: [productId], references: [id], onDelete: NoAction)
+  title       String
+  description String
+
+  @@index([productId])
+}
+
+model Brand {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
+
+  @@fulltext([name])
+}
+
+model Type {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
+
+  @@fulltext([name])
+}
+
+enum Role {
+  USER_ROLE
+  ADMIN_ROLE
+}
